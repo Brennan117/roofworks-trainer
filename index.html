@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RoofWorks Hail Trainer</title>
+<style>
+  :root{
+    --bg:#1b1b1b; --panel:#242424; --panel2:#2c2c2c; --line:#3a3a3a;
+    --fg:#e6e2d8; --dim:#a39e92; --acc:#e0a458; --acc2:#7fb069;
+    --hail:#7fb069; --unsure:#e0a458; --not:#d9694f; --gold:#f2c14e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif}
+  header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:10}
+  header h1{font-size:16px;margin:0;color:var(--acc);font-weight:700}
+  .tag{font-size:11px;color:var(--dim)}
+  nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+  nav button{background:var(--panel);border:1px solid var(--line);color:var(--dim);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px}
+  nav button.on{background:var(--acc);color:#1b1b1b;border-color:var(--acc);font-weight:600}
+  main{padding:16px;max-width:1100px;margin:0 auto}
+  .pane{display:none} .pane.on{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 4px;font-size:15px} .card p.h{color:var(--dim);margin:0 0 12px;font-size:13px}
+  label.f{display:block;margin:8px 0 4px;font-size:12px;color:var(--dim)}
+  input[type=text],input[type=password],input[type=number],select{background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:8px;border-radius:6px;width:100%;font-size:14px}
+  .row{display:flex;gap:12px;flex-wrap:wrap} .row>div{flex:1;min-width:140px}
+  button.btn{background:var(--acc);border:none;color:#1b1b1b;font-weight:600;padding:9px 16px;border-radius:6px;cursor:pointer;font-size:14px}
+  button.btn.sec{background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
+  button.btn:disabled{opacity:.45;cursor:not-allowed}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:26px;text-align:center;color:var(--dim);cursor:pointer}
+  .drop.hot{border-color:var(--acc);color:var(--acc)}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)} th{color:var(--dim);font-weight:500}
+  .pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px}
+  .bar{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:6px}
+  .bar>i{display:block;height:100%;background:var(--acc)}
+  /* grade view */
+  .stage{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .stage .imgwrap{position:relative;flex:1;min-width:280px;max-width:520px}
+  .stage img{width:100%;border-radius:8px;display:block;image-rendering:auto}
+  .stage .boxov{position:absolute;border:2px solid var(--gold);box-shadow:0 0 0 9999px rgba(0,0,0,.02)}
+  .meta{flex:1;min-width:220px}
+  .meta .big{font-size:30px;font-weight:700}
+  .gbtns{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}
+  .gbtns button{flex:1;min-width:90px;padding:14px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;font-size:15px;font-weight:600}
+  .gbtns button.h{border-color:var(--hail)} .gbtns button.u{border-color:var(--unsure)} .gbtns button.n{border-color:var(--not)}
+  .gbtns button.g{border-color:var(--gold)}
+  .kbd{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap} .thumbs figure{margin:0;width:92px} .thumbs img{width:92px;height:92px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+  .thumbs figcaption{font-size:10px;color:var(--dim);text-align:center;margin-top:2px}
+  .note{font-size:12px;color:var(--dim)} .warn{color:var(--not)} .ok{color:var(--acc2)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+  .calib{display:flex;gap:4px;align-items:flex-end;height:120px;margin-top:8px}
+  .calib .col{flex:1;text-align:center} .calib .col i{display:block;background:var(--acc2);border-radius:3px 3px 0 0} .calib .col span{font-size:10px;color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <h1>RoofWorks · Hail Trainer</h1>
+  <span class="tag" id="hdrStat">no project</span>
+  <nav>
+    <button data-t="setup" class="on">Setup</button>
+    <button data-t="work">Load &amp; Surface</button>
+    <button data-t="grade">Grade</button>
+    <button data-t="learn">Learn</button>
+    <button data-t="stats">Stats</button>
+  </nav>
+</header>
+<main>
+
+<!-- SETUP -->
+<section class="pane on" id="p-setup">
+  <div class="card">
+    <h2>1 · Setup</h2>
+    <p class="h">Your Anthropic key stays in this browser only (never uploaded, never saved to a file). The tool surfaces hail candidates, you grade them, and your graded HAIL crops become the model's reference examples for the next run — replacing Loveland's ambiguous references with your own confirmed ones.</p>
+    <div class="row">
+      <div>
+        <label class="f">Anthropic API key (paste; kept in memory)</label>
+        <input type="password" id="key" placeholder="sk-ant-...">
+        <label style="font-size:11px;color:var(--dim);display:flex;gap:6px;margin-top:6px;align-items:center"><input type="checkbox" id="remember" style="width:auto"> remember on this device (localStorage)</label>
+      </div>
+      <div>
+        <label class="f">Model</label>
+        <select id="model">
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 (fast/cheap — default)</option>
+          <option value="claude-opus-4-8">claude-opus-4-8 (best vision)</option>
+        </select>
+        <label class="f">Grader (who is labeling now)</label>
+        <select id="grader">
+          <option>Brennan</option><option>Collin</option><option>Craig (roofer — gold)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div><label class="f">Tile size px (≈1–2 shingles)</label><input type="number" id="tile" value="440"></div>
+      <div><label class="f">Tile overlap</label><input type="number" id="ov" step="0.05" value="0.1"></div>
+      <div><label class="f">Surface threshold (recall: lower = more candidates)</label><input type="number" id="thr" step="0.02" value="0.12"></div>
+      <div><label class="f">Max candidates to grade per set</label><input type="number" id="topn" value="30"></div>
+    </div>
+    <label style="font-size:12px;color:var(--dim);display:flex;gap:6px;margin-top:10px;align-items:center"><input type="checkbox" id="useneg" checked style="width:auto"> feed confirmed NON-hail look-alikes as counter-examples too (improves precision; uncheck if recall drops)</label>
+  </div>
+  <div class="card">
+    <h2>Project</h2>
+    <p class="h">Everything lives in this page during a session. Export a project file to save/back up, hand to Craig, or keep for a real fine-tune later. Import to continue.</p>
+    <div class="row">
+      <button class="btn sec" id="expBtn">⭳ Export project (.json)</button>
+      <label class="btn sec" style="text-align:center">⭱ Import project<input type="file" id="impFile" accept="application/json" hidden></label>
+      <button class="btn sec" id="newBtn">✦ New / clear</button>
+    </div>
+    <p class="note" id="projNote" style="margin-top:10px"></p>
+  </div>
+</section>
+
+<!-- WORK -->
+<section class="pane" id="p-work">
+  <div class="card">
+    <h2>2 · Load 12MP photos into a set</h2>
+    <p class="h">Drag drone JPGs in. Name the set (e.g. <code>Candace</code>, <code>Sean</code>, <code>Test3</code>). Keep sets separate so you can train on one and test on the next.</p>
+    <div class="row" style="align-items:flex-end">
+      <div style="max-width:240px"><label class="f">Set name</label><input type="text" id="setname" placeholder="Candace"></div>
+    </div>
+    <div class="drop" id="drop" style="margin-top:12px">Drop drone photos here, or click to pick</div>
+    <input type="file" id="picker" accept="image/jpeg,image/png" multiple hidden>
+    <table style="margin-top:14px"><thead><tr><th>Set</th><th>Photos</th><th>Candidates</th><th>Graded</th><th></th></tr></thead><tbody id="setRows"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>3 · Surface candidates</h2>
+    <p class="h">Tiles each photo at native resolution and asks the model to <b>grade the granule-loss signature</b> per tile (0–1), using your current reference examples. Tiles above the threshold become candidates, ranked highest-first.</p>
+    <div class="row" style="align-items:flex-end">
+      <div style="max-width:240px"><label class="f">Surface which set</label><select id="surfSet"></select></div>
+      <button class="btn" id="surfBtn">▶ Surface set</button>
+    </div>
+    <div class="bar" id="surfBar" style="display:none"><i style="width:0"></i></div>
+    <p class="note" id="surfNote" style="margin-top:8px"></p>
+  </div>
+</section>
+
+<!-- GRADE -->
+<section class="pane" id="p-grade">
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <div style="max-width:240px"><label class="f">Grade which set</label><select id="gradeSet"></select></div>
+      <div style="flex:2"><span id="gProg" class="note"></span><div class="bar"><i id="gBar" style="width:0"></i></div></div>
+    </div>
+    <div class="stage" id="stage" style="margin-top:14px">
+      <div class="imgwrap"><img id="gImg" alt=""><div class="boxov" id="gBox" style="display:none"></div></div>
+      <div class="meta">
+        <div>model score <span class="big" id="gScore">–</span></div>
+        <div class="note" id="gInfo"></div>
+        <div class="gbtns">
+          <button class="h" data-v="hail">Hail <span class="kbd">H</span></button>
+          <button class="u" data-v="unsure">Unsure <span class="kbd">U</span></button>
+          <button class="n" data-v="not">Not <span class="kbd">N</span></button>
+        </div>
+        <div class="gbtns">
+          <button class="g" id="goldBtn">★ Gold example <span class="kbd">G</span></button>
+          <button class="sec" id="prevBtn">◀ <span class="kbd">←</span></button>
+          <button class="sec" id="nextBtn">▶ <span class="kbd">→</span></button>
+        </div>
+        <label style="font-size:12px;color:var(--dim);display:flex;gap:6px;align-items:center"><input type="checkbox" id="gtChk" style="width:auto"> IRL-confirmed (chalk/physical ground truth — weighted highest)</label>
+        <p class="note" style="margin-top:10px"><b>Gold</b> = your clearest, textbook examples — those become the model's reference images. Grade fast; “Unsure” is fine and is kept out of the reference set.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LEARN -->
+<section class="pane" id="p-learn">
+  <div class="card">
+    <h2>4 · Update the model from your grades</h2>
+    <p class="h">Two things happen: (a) your <b>Gold + Hail</b> crops become positive reference examples and your high-scoring <b>Not</b> crops become counter-examples; (b) your grades <b>calibrate</b> the raw score into a real probability + a suggested threshold. Then surface a fresh set and it should rank better.</p>
+    <button class="btn" id="rebuildBtn">↻ Rebuild references &amp; recalibrate from all grades</button>
+    <p class="note" id="learnNote" style="margin-top:10px"></p>
+    <div class="grid2" style="margin-top:14px">
+      <div>
+        <b>Positive references (model’s “this is hail”)</b>
+        <div class="thumbs" id="posThumbs" style="margin-top:8px"></div>
+      </div>
+      <div>
+        <b>Counter-examples (“looks like hail, isn’t”)</b>
+        <div class="thumbs" id="negThumbs" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <div style="margin-top:16px">
+      <b>Score → confirmed-hail rate (calibration)</b>
+      <div class="calib" id="calib"></div>
+      <p class="note" id="calibNote"></p>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="pane" id="p-stats">
+  <div class="card">
+    <h2>5 · Test on a new set</h2>
+    <p class="h">Surface a set you haven’t trained on (e.g. grade Candace → rebuild → surface Sean). These numbers are measured against <b>your own grades</b> — the ground truth we never had before.</p>
+    <table><thead><tr><th>Set</th><th>Candidates</th><th>Graded hail</th><th>Graded not</th><th>Precision @ graded</th><th>Mean score (hail)</th><th>Mean score (not)</th><th>Separation</th></tr></thead><tbody id="statRows"></tbody></table>
+    <p class="note" style="margin-top:10px">Positive <b>separation</b> (hail mean &gt; not mean) on a set you didn’t train on = the model learned a real boundary at 12MP. If it stays ~0 even with clean grades, that’s when 48MP capture becomes the conversation — not before.</p>
+  </div>
+  <div class="card">
+    <h2>Cost this session</h2>
+    <p class="note" id="costNote">–</p>
+  </div>
+</section>
+
+</main>
+<script>
+"use strict";
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const PRICE={"claude-sonnet-4-6":[3,15],"claude-opus-4-8":[5,25]};
+let DB=blankDB();
+function blankDB(){return{sets:{},labels:{},refs:{pos:[],neg:[]},cost:{i:0,o:0}};}
+function cfg(){return{key:$("#key").value.trim(),model:$("#model").value,grader:$("#grader").value,
+  tile:+$("#tile").value||440,ov:+$("#ov").value||0.1,thr:+$("#thr").value||0.12,topn:+$("#topn").value||30,useneg:$("#useneg").checked};}
+const uid=()=>Math.random().toString(36).slice(2,10);
+
+/* ---------- persistence of settings + key ---------- */
+(function loadSettings(){
+  try{const s=JSON.parse(localStorage.getItem("rwtrainer_set")||"{}");
+    if(s.model)$("#model").value=s.model; if(s.tile)$("#tile").value=s.tile; if(s.ov!=null)$("#ov").value=s.ov;
+    if(s.thr!=null)$("#thr").value=s.thr; if(s.topn)$("#topn").value=s.topn;
+    if(localStorage.getItem("rwtrainer_key")){$("#key").value=localStorage.getItem("rwtrainer_key");$("#remember").checked=true;}
+  }catch(e){}
+})();
+function saveSettings(){const c=cfg();localStorage.setItem("rwtrainer_set",JSON.stringify({model:c.model,tile:c.tile,ov:c.ov,thr:c.thr,topn:c.topn}));
+  if($("#remember").checked)localStorage.setItem("rwtrainer_key",c.key);else localStorage.removeItem("rwtrainer_key");}
+["model","tile","ov","thr","topn","remember","key"].forEach(id=>$("#"+id).addEventListener("change",saveSettings));
+
+/* ---------- tabs ---------- */
+$$("nav button").forEach(b=>b.onclick=()=>{$$("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");
+  $$(".pane").forEach(p=>p.classList.remove("on"));$("#p-"+b.dataset.t).classList.add("on");
+  if(b.dataset.t==="grade")startGrade(); if(b.dataset.t==="learn")renderLearn(); if(b.dataset.t==="stats")renderStats();});
+
+/* ---------- photo loading ---------- */
+const drop=$("#drop"),picker=$("#picker");
+drop.onclick=()=>picker.click();
+["dragover","dragenter"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("hot")}));
+["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("hot")}));
+drop.addEventListener("drop",ev=>addFiles(ev.dataTransfer.files));
+picker.onchange=()=>addFiles(picker.files);
+async function addFiles(files){
+  const set=($("#setname").value.trim()||"Set "+(Object.keys(DB.sets).length+1));
+  DB.sets[set]=DB.sets[set]||{photos:[],candidates:[],surfacedAt:null};
+  for(const f of files){ if(!/^image\//.test(f.type))continue;
+    const dataUrl=await readFile(f); const dim=await imgDim(dataUrl);
+    DB.sets[set].photos.push({id:uid(),name:f.name,dataUrl,w:dim.w,h:dim.h});
+  }
+  refreshSets();
+}
+const readFile=f=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
+const imgDim=u=>new Promise(r=>{const i=new Image();i.onload=()=>r({w:i.naturalWidth,h:i.naturalHeight});i.src=u});
+const loadImg=u=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=u});
+
+function refreshSets(){
+  const rows=$("#setRows");rows.innerHTML="";
+  const opts=Object.keys(DB.sets).map(n=>`<option>${n}</option>`).join("");
+  $("#surfSet").innerHTML=opts;$("#gradeSet").innerHTML=opts;
+  for(const [n,s] of Object.entries(DB.sets)){
+    const graded=s.candidates.filter(c=>DB.labels[c.id]).length;
+    rows.insertAdjacentHTML("beforeend",`<tr><td>${n}</td><td>${s.photos.length}</td><td>${s.candidates.length}</td><td>${graded}</td>
+      <td><button class="btn sec" style="padding:2px 8px" onclick="delSet('${n}')">✕</button></td></tr>`);
+  }
+  $("#hdrStat").textContent=Object.keys(DB.sets).length?`${Object.keys(DB.sets).length} set(s) · ${totalCand()} candidates · ${Object.keys(DB.labels).length} labels`:"no project";
+  updateCost();
+}
+window.delSet=n=>{if(confirm("Delete set "+n+"? (labels for it are kept unless you clear)")){delete DB.sets[n];refreshSets();}};
+const totalCand=()=>Object.values(DB.sets).reduce((a,s)=>a+s.candidates.length,0);
+
+/* ---------- tiling ---------- */
+async function tilePhoto(photo,size,overlap){
+  const img=await loadImg(photo.dataUrl); const step=Math.max(40,Math.round(size*(1-overlap)));
+  const cv=document.createElement("canvas");cv.width=size;cv.height=size;const ctx=cv.getContext("2d");
+  const tiles=[];
+  for(let y=0;y<img.naturalHeight;y+=step){ for(let x=0;x<img.naturalWidth;x+=step){
+    const sx=Math.min(x,Math.max(0,img.naturalWidth-size)), sy=Math.min(y,Math.max(0,img.naturalHeight-size));
+    ctx.clearRect(0,0,size,size); ctx.drawImage(img,sx,sy,size,size,0,0,size,size);
+    tiles.push({x:sx,y:sy,dataUrl:cv.toDataURL("image/jpeg",0.9)});
+    if(x+size>=img.naturalWidth)break;
+  } if(y+size>=img.naturalHeight)break; }
+  return tiles;
+}
+
+/* ---------- Claude call ---------- */
+const SYS=`You inspect ONE ~1-2 shingle tile of an asphalt-shingle roof. Do NOT decide whether hail is "present." GRADE how strongly the tile shows the physical signature of hail granule-loss, 0.0-1.0, and count candidate spots. The granule-loss signature (score higher when more hold for a spot): (1) a discrete, roughly circular spot ~pea-to-dime size; (2) inside it the gritty granule texture gives way to a SMOOTHER, DARKER exposed asphalt mat; (3) it is distinct from the shingle's designed light/dark color blend, from dirt/streaking (follows water flow), and from cast shadow (shadow keeps granule texture and aligns with a light direction). Score 0.0 if the tile is only uniform shingle texture, color blend, dirt, or shadow with no discrete smoother-darker spot. Be calibrated — reserve high scores for clear signatures. Also set "wet":true if the tile is wet/glare (hail cannot be judged wet). Return ONLY JSON: {"granule_loss_score":<0..1>,"candidate_spots":<int>,"tells":<0-3>,"box":{"x":<0-1>,"y":<0-1>,"w":<0-1>,"h":<0-1>} or null,"wet":<bool>,"note":<short>}`;
+function dataParts(dataUrl){const m=/^data:(image\/[a-z]+);base64,(.+)$/i.exec(dataUrl);return m?{media:m[1],data:m[2]}:null;}
+function refBlocks(c){
+  const b=[];
+  if(DB.refs.pos.length){b.push({type:"text",text:"Examples humans CONFIRMED as hail — grade by this standard:"});
+    DB.refs.pos.slice(0,8).forEach(r=>b.push({type:"image",source:{type:"base64",media_type:r.media,data:r.data}}));}
+  if(c.useneg&&DB.refs.neg.length){b.push({type:"text",text:"Look-alikes humans confirmed are NOT hail (do not score these high):"});
+    DB.refs.neg.slice(0,6).forEach(r=>b.push({type:"image",source:{type:"base64",media_type:r.media,data:r.data}}));}
+  if(b.length)b[b.length-1].cache_control={type:"ephemeral"};
+  return b;
+}
+async function grade(dataUrl,c){
+  const dp=dataParts(dataUrl);if(!dp)return{granule_loss_score:0,error:"bad"};
+  const content=[...refBlocks(c),{type:"image",source:{type:"base64",media_type:dp.media,data:dp.data}},{type:"text",text:"JSON only."}];
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{
+    "x-api-key":c.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true","content-type":"application/json"},
+    body:JSON.stringify({model:c.model,max_tokens:320,system:[{type:"text",text:SYS,cache_control:{type:"ephemeral"}}],messages:[{role:"user",content}]})});
+  const j=await r.json();
+  if(j.type==="error")throw new Error(j.error?.message||"API error");
+  if(j.usage){DB.cost.i+=(j.usage.input_tokens||0)+(j.usage.cache_creation_input_tokens||0)+(j.usage.cache_read_input_tokens||0);DB.cost.o+=j.usage.output_tokens||0;}
+  const t=(j.content||[]).map(b=>b.type==="text"?b.text:"").join("");const s=t.indexOf("{"),e=t.lastIndexOf("}");
+  try{return JSON.parse(t.slice(s,e+1));}catch{return{granule_loss_score:0,parse_error:t.slice(0,60)};}
+}
+async function pool(items,fn,n){const out=[];let i=0;const run=async()=>{while(i<items.length){const k=i++;try{out[k]=await fn(items[k],k);}catch(e){out[k]={_err:e.message};}}};await Promise.all(Array.from({length:n},run));return out;}
+
+/* ---------- surface ---------- */
+$("#surfBtn").onclick=async()=>{
+  const c=cfg(); if(!c.key){alert("Paste your API key in Setup first.");return;}
+  const name=$("#surfSet").value; const set=DB.sets[name]; if(!set||!set.photos.length){alert("No photos in that set.");return;}
+  $("#surfBtn").disabled=true; const bar=$("#surfBar");bar.style.display="block";const fill=bar.querySelector("i");
+  $("#surfNote").textContent="Tiling…";
+  let allTiles=[];
+  for(const ph of set.photos){const ts=await tilePhoto(ph,c.tile,c.ov);ts.forEach(t=>allTiles.push({photoId:ph.id,...t}));}
+  $("#surfNote").textContent=`Grading ${allTiles.length} tiles…`;
+  let done=0;
+  const res=await pool(allTiles,async t=>{const r=await grade(t.dataUrl,c);done++;fill.style.width=(done/allTiles.length*100)+"%";
+    if(done%5===0)$("#surfNote").textContent=`Grading ${done}/${allTiles.length} tiles…`;return{...t,...r};},4);
+  const cands=res.filter(r=>Number(r.granule_loss_score)>=c.thr&&!r.wet)
+    .map(r=>({id:uid(),photoId:r.photoId,dataUrl:r.dataUrl,score:+r.granule_loss_score||0,spots:r.candidate_spots||0,tells:r.tells||0,box:r.box||null,note:r.note||""}))
+    .sort((a,b)=>b.score-a.score).slice(0,c.topn);
+  set.candidates=cands; set.surfacedAt=Date.now();
+  $("#surfNote").innerHTML=`<span class="ok">✓ ${cands.length} candidates</span> from ${allTiles.length} tiles (${res.filter(r=>r.wet).length} wet-skipped). Go to <b>Grade</b>.`;
+  $("#surfBtn").disabled=false; refreshSets();
+};
+
+/* ---------- grading ---------- */
+let gQueue=[],gIdx=0,gSetName="";
+function startGrade(){
+  refreshSets(); gSetName=$("#gradeSet").value; const set=DB.sets[gSetName];
+  gQueue=set?set.candidates.slice():[]; gIdx=gQueue.findIndex(c=>!DB.labels[c.id]); if(gIdx<0)gIdx=0; showCand();
+}
+$("#gradeSet").onchange=startGrade;
+function showCand(){
+  const set=DB.sets[gSetName]; if(!set||!gQueue.length){$("#gImg").src="";$("#gScore").textContent="–";$("#gInfo").textContent="No candidates — surface a set first.";$("#gProg").textContent="";$("#gBar").style.width="0";return;}
+  gIdx=Math.max(0,Math.min(gIdx,gQueue.length-1)); const c=gQueue[gIdx]; const lab=DB.labels[c.id];
+  $("#gImg").src=c.dataUrl; $("#gScore").textContent=c.score.toFixed(2);
+  $("#gInfo").innerHTML=`spots ${c.spots} · tells ${c.tells}/3 · <i>${c.note||""}</i>` + (lab?` — <span class="pill" style="background:var(--${lab.verdict==='hail'?'hail':lab.verdict==='not'?'not':'unsure'});color:#1b1b1b">${lab.verdict}${lab.gold?" ★":""}</span>`:"");
+  $("#gtChk").checked=lab?!!lab.groundTruth:false;
+  const graded=gQueue.filter(x=>DB.labels[x.id]).length;
+  $("#gProg").textContent=`${gSetName}: candidate ${gIdx+1}/${gQueue.length} · ${graded} graded`;
+  $("#gBar").style.width=(graded/gQueue.length*100)+"%";
+  const box=$("#gBox"),img=$("#gImg");
+  if(c.box){const w=img.clientWidth||1;img.onload=()=>drawBox(c.box);drawBox(c.box);}else box.style.display="none";
+  function drawBox(b){const iw=img.clientWidth;box.style.display="block";box.style.left=(b.x*iw)+"px";box.style.top=(b.y*iw)+"px";box.style.width=(b.w*iw)+"px";box.style.height=(b.h*iw)+"px";}
+}
+function setVerdict(v){const c=gQueue[gIdx];if(!c)return;const cur=DB.labels[c.id]||{};
+  DB.labels[c.id]={verdict:v,gold:cur.gold||false,grader:$("#grader").value,groundTruth:$("#gtChk").checked,score:c.score,dataUrl:c.dataUrl,setName:gSetName,at:Date.now()};
+  refreshSets(); if(gIdx<gQueue.length-1){gIdx++;showCand();}else showCand();}
+$$(".gbtns button[data-v]").forEach(b=>b.onclick=()=>setVerdict(b.dataset.v));
+$("#goldBtn").onclick=()=>{const c=gQueue[gIdx];if(!c)return;const l=DB.labels[c.id]||{verdict:"hail",grader:$("#grader").value,score:c.score,dataUrl:c.dataUrl,setName:gSetName,at:Date.now()};l.gold=!l.gold;if(l.gold&&!l.verdict)l.verdict="hail";DB.labels[c.id]=l;showCand();};
+$("#nextBtn").onclick=()=>{if(gIdx<gQueue.length-1){gIdx++;showCand();}};
+$("#prevBtn").onclick=()=>{if(gIdx>0){gIdx--;showCand();}};
+$("#gtChk").onchange=()=>{const c=gQueue[gIdx];if(c&&DB.labels[c.id]){DB.labels[c.id].groundTruth=$("#gtChk").checked;}};
+document.addEventListener("keydown",e=>{if(!$("#p-grade").classList.contains("on"))return;if(/input|select|textarea/i.test(e.target.tagName))return;
+  const k=e.key.toLowerCase();if(k==="h")setVerdict("hail");else if(k==="u")setVerdict("unsure");else if(k==="n")setVerdict("not");
+  else if(k==="g")$("#goldBtn").click();else if(e.key==="ArrowRight")$("#nextBtn").click();else if(e.key==="ArrowLeft")$("#prevBtn").click();});
+
+/* ---------- learn: rebuild refs + calibration ---------- */
+$("#rebuildBtn").onclick=()=>{rebuild();renderLearn();};
+function rebuild(){
+  const labs=Object.values(DB.labels);
+  const hail=labs.filter(l=>l.verdict==="hail").sort((a,b)=>(b.groundTruth-a.groundTruth)||(b.gold-a.gold)||(b.score-a.score));
+  const gold=hail.filter(l=>l.gold||l.groundTruth);
+  const pos=(gold.length?gold:hail).slice(0,8);
+  const neg=labs.filter(l=>l.verdict==="not").sort((a,b)=>b.score-a.score).slice(0,6); // highest-scoring "not" = the confusers
+  DB.refs.pos=pos.map(l=>dataParts(l.dataUrl)).filter(Boolean);
+  DB.refs.neg=neg.map(l=>dataParts(l.dataUrl)).filter(Boolean);
+  $("#learnNote").innerHTML=`<span class="ok">✓ Rebuilt:</span> ${DB.refs.pos.length} positive refs (${gold.length} gold/IRL prioritized), ${DB.refs.neg.length} counter-examples. Now surface a fresh set — it uses these.`;
+}
+function renderLearn(){
+  const pt=$("#posThumbs"),nt=$("#negThumbs");pt.innerHTML="";nt.innerHTML="";
+  DB.refs.pos.forEach(r=>pt.insertAdjacentHTML("beforeend",`<figure><img src="data:${r.media};base64,${r.data}"><figcaption>hail</figcaption></figure>`));
+  DB.refs.neg.forEach(r=>nt.insertAdjacentHTML("beforeend",`<figure><img src="data:${r.media};base64,${r.data}"><figcaption>not</figcaption></figure>`));
+  if(!DB.refs.pos.length)pt.innerHTML='<span class="note">Grade some Hail (star the clearest as Gold), then Rebuild.</span>';
+  // calibration
+  const labs=Object.values(DB.labels).filter(l=>l.verdict==="hail"||l.verdict==="not");
+  const bins=[0,.2,.4,.6,.8,1];const cal=$("#calib");cal.innerHTML="";let txt=[];
+  for(let i=0;i<bins.length-1;i++){const lo=bins[i],hi=bins[i+1];const inb=labs.filter(l=>l.score>=lo&&l.score<(hi===1?1.01:hi));
+    const rate=inb.length?inb.filter(l=>l.verdict==="hail").length/inb.length:0;
+    cal.insertAdjacentHTML("beforeend",`<div class="col"><i style="height:${Math.round(rate*100)}px"></i><span>${lo.toFixed(1)}–${hi.toFixed(1)}<br>${inb.length?Math.round(rate*100)+"%":"–"}<br>n=${inb.length}</span></div>`);
+    if(inb.length)txt.push([lo,rate,inb.length]);}
+  // suggested threshold: lowest bin where hit-rate >=0.5
+  const good=txt.find(t=>t[1]>=0.5);
+  $("#calibNote").innerHTML=good?`Suggested surface/keep threshold ≈ <b>${good[0].toFixed(2)}</b> (where confirmed-hail rate crosses 50%). Set it in Setup.`:(labs.length?`Not enough separation yet — grade more, or the signal may be capture-limited at 12MP.`:`Grade Hail/Not candidates to build the calibration curve.`);
+}
+
+/* ---------- stats ---------- */
+function renderStats(){
+  const rows=$("#statRows");rows.innerHTML="";
+  for(const [n,s] of Object.entries(DB.sets)){
+    const graded=s.candidates.map(c=>({c,l:DB.labels[c.id]})).filter(x=>x.l);
+    const hail=graded.filter(x=>x.l.verdict==="hail"),not=graded.filter(x=>x.l.verdict==="not");
+    const mean=a=>a.length?a.reduce((z,x)=>z+x.c.score,0)/a.length:NaN;
+    const mh=mean(hail),mn=mean(not);const prec=(hail.length+not.length)?hail.length/(hail.length+not.length):NaN;
+    const sep=(!isNaN(mh)&&!isNaN(mn))?(mh-mn):NaN;
+    rows.insertAdjacentHTML("beforeend",`<tr><td>${n}</td><td>${s.candidates.length}</td><td>${hail.length}</td><td>${not.length}</td>
+      <td>${isNaN(prec)?"–":Math.round(prec*100)+"%"}</td><td>${isNaN(mh)?"–":mh.toFixed(2)}</td><td>${isNaN(mn)?"–":mn.toFixed(2)}</td>
+      <td style="color:${sep>0.1?'var(--acc2)':sep<0?'var(--not)':'var(--dim)'}">${isNaN(sep)?"–":(sep>0?"+":"")+sep.toFixed(2)}</td></tr>`);
+  }
+  updateCost();
+}
+function updateCost(){const p=PRICE[cfg().model]||[3,15];const $c=DB.cost.i/1e6*p[0]+DB.cost.o/1e6*p[1];
+  $("#costNote").textContent=`${(DB.cost.i/1000).toFixed(0)}k in · ${(DB.cost.o/1000).toFixed(0)}k out · ≈ $${$c.toFixed(3)}`;}
+
+/* ---------- project export/import ---------- */
+$("#expBtn").onclick=()=>{const blob=new Blob([JSON.stringify(DB)],{type:"application/json"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=`roofworks-trainer-${new Date().toISOString().slice(0,10)}.json`;a.click();};
+$("#impFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());
+  DB=Object.assign(blankDB(),d);DB.refs=DB.refs||{pos:[],neg:[]};DB.labels=DB.labels||{};refreshSets();renderLearn();
+  $("#projNote").innerHTML=`<span class="ok">✓ Imported</span> ${Object.keys(DB.sets).length} set(s), ${Object.keys(DB.labels).length} labels.`;}catch(err){alert("Bad project file: "+err.message);}};
+$("#newBtn").onclick=()=>{if(confirm("Clear everything in this page? (export first if you want to keep it)")){DB=blankDB();refreshSets();renderLearn();}};
+
+refreshSets();
+</script>
+</body>
+</html>

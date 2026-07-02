@@ -143,6 +143,7 @@
       <div style="max-width:240px"><label class="f">Grade which set</label><select id="gradeSet"></select></div>
       <div style="flex:2"><span id="gProg" class="note"></span><div class="bar"><i id="gBar" style="width:0"></i></div></div>
     </div>
+    <div id="meter" class="note" style="margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:6px;font-size:13px">Ranking signal — grade a few candidates to begin measuring</div>
     <div class="stage" id="stage" style="margin-top:14px">
       <div class="imgwrap"><img id="gImg" alt=""><div class="boxov" id="gBox" style="display:none"></div></div>
       <div class="meta">
@@ -262,7 +263,7 @@ function refreshSets(){
       <td><button class="btn sec" style="padding:2px 8px" onclick="delSet('${n}')">✕</button></td></tr>`);
   }
   $("#hdrStat").textContent=Object.keys(DB.sets).length?`${Object.keys(DB.sets).length} set(s) · ${totalCand()} candidates · ${Object.keys(DB.labels).length} labels`:"no project";
-  updateCost();
+  updateCost(); updateMeter();
 }
 window.delSet=n=>{if(confirm("Delete set "+n+"? (labels for it are kept unless you clear)")){delete DB.sets[n];refreshSets();}};
 const totalCand=()=>Object.values(DB.sets).reduce((a,s)=>a+s.candidates.length,0);
@@ -402,6 +403,20 @@ function renderStats(){
       <td style="color:${sep>0.1?'var(--acc2)':sep<0?'var(--not)':'var(--dim)'}">${isNaN(sep)?"–":(sep>0?"+":"")+sep.toFixed(2)}</td></tr>`);
   }
   updateCost();
+}
+function updateMeter(){
+  const el=$("#meter"); if(!el)return;
+  const labs=Object.values(DB.labels).filter(l=>l.verdict==="hail"||l.verdict==="not");
+  const hail=labs.filter(l=>l.verdict==="hail").map(l=>+l.score), not=labs.filter(l=>l.verdict==="not").map(l=>+l.score);
+  const mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:NaN;
+  const mh=mean(hail),mn=mean(not),sep=mh-mn;
+  if(hail.length<3||not.length<3){el.innerHTML=`<b>Ranking signal:</b> grade a few more (${hail.length} hail / ${not.length} not) — need ≥3 of each to start measuring`;el.style.color="var(--dim)";return;}
+  let v,c;
+  if(sep>=0.15){v="✓ the model's score is tracking your calls — ranking is working";c="var(--acc2)";}
+  else if(sep>0.05){v="↗ weak but positive — keep grading, then Rebuild references (Learn tab)";c="var(--unsure)";}
+  else{v="✗ not tracking yet — grade more, then hit Rebuild; if it stays flat with clean grades, that's the 48MP conversation";c="var(--not)";}
+  el.innerHTML=`<b>Ranking signal — separation <span style="color:${c}">${(sep>0?"+":"")+sep.toFixed(2)}</span></b> · your Hail avg ${mh.toFixed(2)} vs Not avg ${mn.toFixed(2)} (${hail.length} hail / ${not.length} not) — <span style="color:${c}">${v}</span>`;
+  el.style.color="var(--fg)";
 }
 function updateCost(){const p=PRICE[cfg().model]||[3,15];const $c=DB.cost.i/1e6*p[0]+DB.cost.o/1e6*p[1];
   $("#costNote").textContent=`${(DB.cost.i/1000).toFixed(0)}k in · ${(DB.cost.o/1000).toFixed(0)}k out · ≈ $${$c.toFixed(3)}`;}

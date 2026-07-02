@@ -341,8 +341,8 @@ function showCand(){
   $("#gImg").src=c.dataUrl; $("#gScore").textContent=c.score.toFixed(2);
   $("#gInfo").innerHTML=`spots ${c.spots} · tells ${c.tells}/3 · <i>${c.note||""}</i>` + (lab?` — <span class="pill" style="background:var(--${lab.verdict==='hail'?'hail':lab.verdict==='not'?'not':'unsure'});color:#1b1b1b">${lab.verdict}${lab.gold?" ★":""}</span>`:"");
   $("#gtChk").checked=lab?!!lab.groundTruth:false;
-  const graded=gQueue.filter(x=>DB.labels[x.id]).length;
-  $("#gProg").textContent=`${gSetName}: candidate ${gIdx+1}/${gQueue.length} · ${graded} graded`;
+  const graded=gQueue.filter(x=>DB.labels[x.id]).length; const togo=gQueue.length-graded;
+  $("#gProg").innerHTML=`<b>${gSetName}</b> · on ${gIdx+1}/${gQueue.length} · <b>${graded} graded, ${togo} to go</b>` + (togo===0?' <span style="color:var(--acc2)">✓ set complete — Rebuild in Learn</span>':'');
   $("#gBar").style.width=(graded/gQueue.length*100)+"%";
   const box=$("#gBox"),img=$("#gImg");
   if(c.box){const w=img.clientWidth||1;img.onload=()=>drawBox(c.box);drawBox(c.box);}else box.style.display="none";

@@ -283,7 +283,7 @@ async function tilePhoto(photo,size,overlap){
 }
 
 /* ---------- Claude call ---------- */
-const SYS=`You inspect ONE ~1-2 shingle tile of an asphalt-shingle roof. Do NOT decide whether hail is "present." GRADE how strongly the tile shows the physical signature of hail granule-loss, 0.0-1.0, and count candidate spots. The granule-loss signature (score higher when more hold for a spot): (1) a discrete, roughly circular spot ~pea-to-dime size; (2) inside it the gritty granule texture gives way to a SMOOTHER, DARKER exposed asphalt mat; (3) it is distinct from the shingle's designed light/dark color blend, from dirt/streaking (follows water flow), and from cast shadow (shadow keeps granule texture and aligns with a light direction). Score 0.0 if the tile is only uniform shingle texture, color blend, dirt, or shadow with no discrete smoother-darker spot. Be calibrated — reserve high scores for clear signatures. Also set "wet":true if the tile is wet/glare (hail cannot be judged wet). Return ONLY JSON: {"granule_loss_score":<0..1>,"candidate_spots":<int>,"tells":<0-3>,"box":{"x":<0-1>,"y":<0-1>,"w":<0-1>,"h":<0-1>} or null,"wet":<bool>,"note":<short>}`;
+const SYS=`You inspect ONE ~1-2 shingle tile of an asphalt-shingle roof. Do NOT decide whether hail is "present." GRADE how strongly the tile shows the physical signature of hail granule-loss, 0.0-1.0, and count candidate spots. The granule-loss signature (score higher when more hold for a spot): (1) a discrete, roughly circular spot ~pea-to-dime size; (2) inside it the gritty granule texture gives way to a SMOOTHER, DARKER exposed asphalt mat; (3) it is distinct from the shingle's designed light/dark color blend, from dirt/streaking (follows water flow), and from cast shadow (shadow keeps granule texture and aligns with a light direction). Score 0.0 if the tile is only uniform shingle texture, color blend, dirt, or shadow with no discrete smoother-darker spot. Be calibrated — reserve high scores for clear signatures. Also set "wet":true if the tile is wet/glare (hail cannot be judged wet). Set "usable":false if this tile is NOT a reasonably head-on view of shingle roof surface — steeply oblique/angled, badly blurred, or showing sky, ground, gutter, fascia, roof edge, or other non-shingle content (those cannot be judged for hail); otherwise "usable":true. Return ONLY JSON: {"granule_loss_score":<0..1>,"candidate_spots":<int>,"tells":<0-3>,"wet":<bool>,"usable":<bool>,"note":<short>}`;
 function dataParts(dataUrl){const m=/^data:(image\/[a-z]+);base64,(.+)$/i.exec(dataUrl);return m?{media:m[1],data:m[2]}:null;}
 function refBlocks(c){
   const b=[];
@@ -320,11 +320,11 @@ $("#surfBtn").onclick=async()=>{
   let done=0;
   const res=await pool(allTiles,async t=>{const r=await grade(t.dataUrl,c);done++;fill.style.width=(done/allTiles.length*100)+"%";
     if(done%5===0)$("#surfNote").textContent=`Grading ${done}/${allTiles.length} tiles…`;return{...t,...r};},4);
-  const cands=res.filter(r=>Number(r.granule_loss_score)>=c.thr&&!r.wet)
+  const cands=res.filter(r=>Number(r.granule_loss_score)>=c.thr&&!r.wet&&r.usable!==false)
     .map(r=>({id:uid(),photoId:r.photoId,dataUrl:r.dataUrl,score:+r.granule_loss_score||0,spots:r.candidate_spots||0,tells:r.tells||0,box:r.box||null,note:r.note||""}))
     .sort((a,b)=>b.score-a.score).slice(0,c.topn);
   set.candidates=cands; set.surfacedAt=Date.now();
-  $("#surfNote").innerHTML=`<span class="ok">✓ ${cands.length} candidates</span> from ${allTiles.length} tiles (${res.filter(r=>r.wet).length} wet-skipped). Go to <b>Grade</b>.`;
+  $("#surfNote").innerHTML=`<span class="ok">✓ ${cands.length} candidates</span> from ${allTiles.length} tiles (${res.filter(r=>r.wet).length} wet, ${res.filter(r=>r.usable===false).length} off-angle skipped). Go to <b>Grade</b>.`;
   $("#surfBtn").disabled=false; refreshSets();
 };
 
@@ -344,9 +344,7 @@ function showCand(){
   const graded=gQueue.filter(x=>DB.labels[x.id]).length; const togo=gQueue.length-graded;
   $("#gProg").innerHTML=`<b>${gSetName}</b> · on ${gIdx+1}/${gQueue.length} · <b>${graded} graded, ${togo} to go</b>` + (togo===0?' <span style="color:var(--acc2)">✓ set complete — Rebuild in Learn</span>':'');
   $("#gBar").style.width=(graded/gQueue.length*100)+"%";
-  const box=$("#gBox"),img=$("#gImg");
-  if(c.box){const w=img.clientWidth||1;img.onload=()=>drawBox(c.box);drawBox(c.box);}else box.style.display="none";
-  function drawBox(b){const iw=img.clientWidth;box.style.display="block";box.style.left=(b.x*iw)+"px";box.style.top=(b.y*iw)+"px";box.style.width=(b.w*iw)+"px";box.style.height=(b.h*iw)+"px";}
+  $("#gBox").style.display="none"; // boxes hidden — vision bboxes are imprecise; judge the whole tile
 }
 function setVerdict(v){const c=gQueue[gIdx];if(!c)return;const cur=DB.labels[c.id]||{};
   DB.labels[c.id]={verdict:v,gold:cur.gold||false,grader:$("#grader").value,groundTruth:$("#gtChk").checked,score:c.score,dataUrl:c.dataUrl,setName:gSetName,at:Date.now()};

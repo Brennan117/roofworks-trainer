@@ -59,6 +59,7 @@
 <header>
   <h1>RoofWorks · Hail Trainer</h1>
   <span class="tag" id="hdrStat">no project</span>
+  <span class="tag" id="saveBadge" style="color:var(--acc2)"></span>
   <nav>
     <button data-t="setup" class="on">Setup</button>
     <button data-t="work">Load &amp; Surface</button>
@@ -215,6 +216,14 @@ function blankDB(){return{sets:{},labels:{},refs:{pos:[],neg:[]},cost:{i:0,o:0}}
 function cfg(){return{key:$("#key").value.trim(),model:$("#model").value,grader:$("#grader").value,
   tile:+$("#tile").value||440,ov:+$("#ov").value||0.1,thr:+$("#thr").value||0.12,topn:+$("#topn").value||30,useneg:$("#useneg").checked};}
 const uid=()=>Math.random().toString(36).slice(2,10);
+/* ---- auto-save (IndexedDB; survives refresh) ---- */
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("rwtrainer",1);r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains("kv"))db.createObjectStore("kv");};r.onsuccess=e=>res(e.target.result);r.onerror=e=>rej(e);});}
+async function idbPut(k,v){try{const d=await idb();await new Promise((res,rej)=>{const t=d.transaction("kv","readwrite");t.objectStore("kv").put(v,k);t.oncomplete=res;t.onerror=rej;});}catch(e){}}
+async function idbGet(k){try{const d=await idb();return await new Promise(res=>{const g=d.transaction("kv","readonly").objectStore("kv").get(k);g.onsuccess=()=>res(g.result);g.onerror=()=>res(null);});}catch(e){return null;}}
+let _saveT;
+function autosave(){clearTimeout(_saveT);_saveT=setTimeout(doSave,1200);}
+function leanDB(){const d={sets:{},labels:DB.labels,refs:DB.refs,cost:DB.cost};for(const[n,s]of Object.entries(DB.sets)){d.sets[n]={surfacedAt:s.surfacedAt,candidates:s.candidates,photos:(s.photos||[]).map(p=>({id:p.id,name:p.name,w:p.w,h:p.h}))};}return d;}
+async function doSave(){await idbPut("db",JSON.stringify(leanDB()));const b=$("#saveBadge");if(b)b.textContent="· auto-saved ✓";}
 
 /* ---------- persistence of settings + key ---------- */
 (function loadSettings(){
@@ -263,7 +272,7 @@ function refreshSets(){
       <td><button class="btn sec" style="padding:2px 8px" onclick="delSet('${n}')">✕</button></td></tr>`);
   }
   $("#hdrStat").textContent=Object.keys(DB.sets).length?`${Object.keys(DB.sets).length} set(s) · ${totalCand()} candidates · ${Object.keys(DB.labels).length} labels`:"no project";
-  updateCost(); updateMeter();
+  updateCost(); updateMeter(); autosave();
 }
 window.delSet=n=>{if(confirm("Delete set "+n+"? (labels for it are kept unless you clear)")){delete DB.sets[n];refreshSets();}};
 const totalCand=()=>Object.values(DB.sets).reduce((a,s)=>a+s.candidates.length,0);
@@ -425,9 +434,9 @@ $("#expBtn").onclick=()=>{const blob=new Blob([JSON.stringify(DB)],{type:"applic
 $("#impFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());
   DB=Object.assign(blankDB(),d);DB.refs=DB.refs||{pos:[],neg:[]};DB.labels=DB.labels||{};refreshSets();renderLearn();
   $("#projNote").innerHTML=`<span class="ok">✓ Imported</span> ${Object.keys(DB.sets).length} set(s), ${Object.keys(DB.labels).length} labels.`;}catch(err){alert("Bad project file: "+err.message);}};
-$("#newBtn").onclick=()=>{if(confirm("Clear everything in this page? (export first if you want to keep it)")){DB=blankDB();refreshSets();renderLearn();}};
+$("#newBtn").onclick=()=>{if(confirm("Clear everything in this page? (export first if you want to keep it)")){DB=blankDB();idbPut("db","");refreshSets();renderLearn();}};
 
-refreshSets();
+idbGet("db").then(saved=>{ if(saved){ try{ const d=JSON.parse(saved); DB.sets=d.sets||{}; DB.labels=d.labels||{}; DB.refs=d.refs||{pos:[],neg:[]}; DB.cost=d.cost||{i:0,o:0}; $("#projNote").innerHTML='<span class="ok">↻ Restored your grades from auto-save.</span> Re-load photos only if you want to re-surface a set.'; }catch(e){} } refreshSets(); renderLearn(); });
 </script>
 </body>
 </html>

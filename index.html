@@ -352,6 +352,21 @@ async function detectSpots(photo,opt){
     if(bigE>60) continue;            // big patch = shadow/stain
     if(bigE<3) continue;             // speck/noise
     if(bigE/smallE>2.7) continue;    // linear = edge/shadow line
+    // ray test: real hail fades out in EVERY direction within its own radius;
+    // a spot on a shingle joint/junction stays dark along the joint line(s)
+    const lvl=mean+(p.v-mean)*0.32, runLim=Math.max(20,bigE*0.8);
+    let onLine=false;
+    for(let a=0;a<16&&!onLine;a++){
+      const ux=Math.cos(a*Math.PI/8), uy=Math.sin(a*Math.PI/8);
+      let run=0;
+      for(let t=3;t<=36;t++){
+        const qx=Math.round(p.x+ux*t), qy=Math.round(p.y+uy*t);
+        if(qx<1||qy<1||qx>=W-1||qy>=H-1) break;
+        if(d[qy*W+qx]>=lvl) run++; else break;
+      }
+      if(run>=runLim) onLine=true;
+    }
+    if(onLine) continue;
     kept.push({x:p.x,y:p.y,z:(p.v-mean)/sd,size:bigE});
   }
   // collinear-run suppression: ≥5 spots inside a 12px corridor of a common line

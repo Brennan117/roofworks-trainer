@@ -58,6 +58,7 @@
 <body>
 <header>
   <h1>RoofWorks · Hail Trainer</h1>
+  <span class="tag" style="color:var(--acc)">engine v8</span>
   <span class="tag" id="hdrStat">no project</span>
   <span class="tag" id="saveBadge" style="color:var(--acc2)"></span>
   <nav>
@@ -319,67 +320,78 @@ function blobShape(d,W,H,p,level){
 }
 async function detectSpots(photo,opt){
   const img=await loadImg(photo.dataUrl);
-  const W=img.naturalWidth,H=img.naturalHeight,N=W*H;
+  const W=img.naturalWidth,H=img.naturalHeight;
+  // full-res canvas — used only to cut the candidate crops
   const cv=document.createElement("canvas");cv.width=W;cv.height=H;
   const ctx=cv.getContext("2d",{willReadFrequently:true});
   ctx.drawImage(img,0,0);
-  const px=ctx.getImageData(0,0,W,H).data;
-  const g=new Float32Array(N);
-  for(let i=0,j=0;i<N;i++,j+=4) g[i]=0.299*px[j]+0.587*px[j+1]+0.114*px[j+2];
-  const small=boxBlur(g,W,H,2), big=boxBlur(g,W,H,30);
-  const d=new Float32Array(N);
-  for(let i=0;i<N;i++) d[i]=big[i]-small[i]; // positive = darker than local field
-  let sum=0,sum2=0,n=0;
-  for(let i=0;i<N;i+=7){const v=d[i];sum+=v;sum2+=v*v;n++;}
-  const mean=sum/n, sd=Math.sqrt(Math.max(1e-6,sum2/n-mean*mean));
+  // DETECTION runs at ~2000px wide: the downscale averages away granule noise so
+  // joint/edge shadow lines stay continuous for the ray test (validated scale)
+  const SC=Math.max(1,W/2000);
+  const w=Math.round(W/SC), h=Math.round(H/SC), n=w*h;
+  const dc=document.createElement("canvas");dc.width=w;dc.height=h;
+  const dctx=dc.getContext("2d",{willReadFrequently:true});
+  dctx.drawImage(img,0,0,w,h);
+  const px=dctx.getImageData(0,0,w,h).data;
+  const g=new Float32Array(n);
+  for(let i=0,j=0;i<n;i++,j+=4) g[i]=0.299*px[j]+0.587*px[j+1]+0.114*px[j+2];
+  const small=boxBlur(g,w,h,1), big=boxBlur(g,w,h,15);
+  const d=new Float32Array(n);
+  for(let i=0;i<n;i++) d[i]=big[i]-small[i]; // positive = darker than local field
+  let sum=0,sum2=0,m=0;
+  for(let i=0;i<n;i+=5){const v=d[i];sum+=v;sum2+=v*v;m++;}
+  const mean=sum/m, sd=Math.sqrt(Math.max(1e-6,sum2/m-mean*mean));
   const thr=mean+opt.minZ*sd;
   const peaks=[];
-  for(let y=8;y<H-8;y+=2){ for(let x=8;x<W-8;x+=2){
-    const v=d[y*W+x]; if(v<=thr) continue;
+  for(let y=4;y<h-4&&peaks.length<30000;y++){ for(let x=4;x<w-4;x++){
+    const v=d[y*w+x]; if(v<=thr) continue;
     let mx=true;
-    for(let dy=-2;dy<=2&&mx;dy++) for(let dx=-2;dx<=2;dx++) if(d[(y+dy)*W+x+dx]>v){mx=false;break;}
-    if(mx){ peaks.push({x,y,v}); if(peaks.length>50000) y=H; }
+    for(let dy=-2;dy<=2&&mx;dy++) for(let dx=-2;dx<=2;dx++) if(d[(y+dy)*w+x+dx]>v){mx=false;break;}
+    if(mx) peaks.push({x,y,v});
   }}
   peaks.sort((a,b)=>b.v-a.v);
-  const kept=[], MIND=34;
+  const kept=[], MIND=17;
   for(const p of peaks){
     if(kept.length>=opt.maxSpots*3) break; // gather extra; structural runs get culled next
     if(kept.some(k=>Math.abs(k.x-p.x)<MIND&&Math.abs(k.y-p.y)<MIND)) continue;
-    const bg=big[p.y*W+p.x];
+    const bg=big[p.y*w+p.x];
     if(bg>242||bg<22) continue; // sky/glare or deep shadow — unjudgeable
-    const sh=blobShape(d,W,H,p,mean+(p.v-mean)*0.5);
+    const sh=blobShape(d,w,h,p,mean+(p.v-mean)*0.5);
     const bigE=Math.max(sh.w,sh.h), smallE=Math.max(1,Math.min(sh.w,sh.h));
-    if(bigE>60) continue;            // big patch = shadow/stain
-    if(bigE<3) continue;             // speck/noise
+    if(bigE>30) continue;            // big patch = shadow/stain
+    if(bigE<2) continue;             // speck/noise
     if(bigE/smallE>2.7) continue;    // linear = edge/shadow line
     // ray test: real hail fades out in EVERY direction within its own radius;
-    // a spot on a shingle joint/junction stays dark along the joint line(s)
-    const lvl=mean+(p.v-mean)*0.32, runLim=Math.max(20,bigE*0.8);
+    // a spot on a shingle joint/junction/edge stays dark along the line.
+    // Rays sample ±1px perpendicular and forgive 1px gaps (dashed joint lines).
+    const lvl=mean+(p.v-mean)*0.32, runLim=Math.max(10,bigE*0.8);
     let onLine=false;
     for(let a=0;a<16&&!onLine;a++){
       const ux=Math.cos(a*Math.PI/8), uy=Math.sin(a*Math.PI/8);
-      let run=0;
-      for(let t=3;t<=36;t++){
+      const nxp=Math.round(-uy), nyp=Math.round(ux);
+      let run=0, miss=0;
+      for(let t=2;t<=22;t++){
         const qx=Math.round(p.x+ux*t), qy=Math.round(p.y+uy*t);
-        if(qx<1||qy<1||qx>=W-1||qy>=H-1) break;
-        if(d[qy*W+qx]>=lvl) run++; else break;
+        if(qx<1||qy<1||qx>=w-1||qy>=h-1) break;
+        const val=Math.max(d[qy*w+qx], d[(qy+nyp)*w+qx+nxp], d[(qy-nyp)*w+qx-nxp]);
+        if(val>=lvl){ run++; miss=0; } else if(++miss>1) break;
       }
       if(run>=runLim) onLine=true;
     }
     if(onLine) continue;
     kept.push({x:p.x,y:p.y,z:(p.v-mean)/sd,size:bigE});
   }
-  // collinear-run suppression: ≥5 spots inside a 12px corridor of a common line
+  // collinear-run suppression: ≥5 spots inside a 6px corridor of a common line
   // are roof structure (hip/ridge/eave shadow notches), not hail
   const drop=new Set();
   for(let i=0;i<kept.length;i++) for(let j=i+1;j<kept.length;j++){
     const a=kept[i], b=kept[j];
     const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy);
-    if(len<40) continue;
+    if(len<20) continue;
     const nx=-dy/len, ny=dx/len, on=[];
     for(let k=0;k<kept.length;k++){
       const q=kept[k];
-      if(Math.abs((q.x-a.x)*nx+(q.y-a.y)*ny)<12) on.push(k);
+      if(Math.abs((q.x-a.x)*nx+(q.y-a.y)*ny)<6) on.push(k);
     }
     if(on.length>=5) on.forEach(k=>drop.add(k));
   }
@@ -387,10 +399,11 @@ async function detectSpots(photo,opt){
   const C=opt.crop, half=C>>1, oc=document.createElement("canvas");
   oc.width=C; oc.height=C; const octx=oc.getContext("2d");
   return final.map(p=>{
-    const sx=Math.max(0,Math.min(W-C,p.x-half)), sy=Math.max(0,Math.min(H-C,p.y-half));
+    const fx=Math.round(p.x*SC), fy=Math.round(p.y*SC);
+    const sx=Math.max(0,Math.min(W-C,fx-half)), sy=Math.max(0,Math.min(H-C,fy-half));
     octx.drawImage(cv,sx,sy,C,C,0,0,C,C);
-    return {photoId:photo.id,x:p.x,y:p.y,z:p.z,size:p.size,
-      point:{x:(p.x-sx)/C,y:(p.y-sy)/C},dataUrl:oc.toDataURL("image/jpeg",0.92)};
+    return {photoId:photo.id,x:fx,y:fy,z:p.z,size:Math.round(p.size*SC),
+      point:{x:(fx-sx)/C,y:(fy-sy)/C},dataUrl:oc.toDataURL("image/jpeg",0.92)};
   });
 }
 

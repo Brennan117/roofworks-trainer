@@ -343,7 +343,7 @@ async function detectSpots(photo,opt){
   peaks.sort((a,b)=>b.v-a.v);
   const kept=[], MIND=34;
   for(const p of peaks){
-    if(kept.length>=opt.maxSpots) break;
+    if(kept.length>=opt.maxSpots*3) break; // gather extra; structural runs get culled next
     if(kept.some(k=>Math.abs(k.x-p.x)<MIND&&Math.abs(k.y-p.y)<MIND)) continue;
     const bg=big[p.y*W+p.x];
     if(bg>242||bg<22) continue; // sky/glare or deep shadow — unjudgeable
@@ -354,9 +354,24 @@ async function detectSpots(photo,opt){
     if(bigE/smallE>2.7) continue;    // linear = edge/shadow line
     kept.push({x:p.x,y:p.y,z:(p.v-mean)/sd,size:bigE});
   }
+  // collinear-run suppression: ≥5 spots inside a 12px corridor of a common line
+  // are roof structure (hip/ridge/eave shadow notches), not hail
+  const drop=new Set();
+  for(let i=0;i<kept.length;i++) for(let j=i+1;j<kept.length;j++){
+    const a=kept[i], b=kept[j];
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy);
+    if(len<40) continue;
+    const nx=-dy/len, ny=dx/len, on=[];
+    for(let k=0;k<kept.length;k++){
+      const q=kept[k];
+      if(Math.abs((q.x-a.x)*nx+(q.y-a.y)*ny)<12) on.push(k);
+    }
+    if(on.length>=5) on.forEach(k=>drop.add(k));
+  }
+  const final=kept.filter((_,k)=>!drop.has(k)).sort((a,b)=>b.z-a.z).slice(0,opt.maxSpots);
   const C=opt.crop, half=C>>1, oc=document.createElement("canvas");
   oc.width=C; oc.height=C; const octx=oc.getContext("2d");
-  return kept.map(p=>{
+  return final.map(p=>{
     const sx=Math.max(0,Math.min(W-C,p.x-half)), sy=Math.max(0,Math.min(H-C,p.y-half));
     octx.drawImage(cv,sx,sy,C,C,0,0,C,C);
     return {photoId:photo.id,x:p.x,y:p.y,z:p.z,size:p.size,

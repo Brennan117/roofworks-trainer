@@ -74,7 +74,7 @@
 <section class="pane on" id="p-setup">
   <div class="card">
     <h2>1 · Setup</h2>
-    <p class="h">Your Anthropic key stays in this browser only (never uploaded, never saved to a file). The tool surfaces hail candidates, you grade them, and your graded HAIL crops become the model's reference examples for the next run — replacing Loveland's ambiguous references with your own confirmed ones.</p>
+    <p class="h"><b>New engine:</b> candidates are found by scanning the raw pixels for hail-sized dark tonal spots against the surrounding shingle field (the same "slight discoloration" anomalies Loveland marks) — <b>free, instant, no API</b>. Optionally, Claude then classifies each found spot (uses API + your reference examples). Your grades still build references and calibration either way. The API key is only needed if AI-classify is on; it stays in this browser only.</p>
     <div class="row">
       <div>
         <label class="f">Anthropic API key (paste; kept in memory)</label>
@@ -94,12 +94,13 @@
       </div>
     </div>
     <div class="row">
-      <div><label class="f">Tile size px (≈1–2 shingles)</label><input type="number" id="tile" value="440"></div>
-      <div><label class="f">Tile overlap</label><input type="number" id="ov" step="0.05" value="0.1"></div>
-      <div><label class="f">Surface threshold (recall: lower = more candidates)</label><input type="number" id="thr" step="0.02" value="0.12"></div>
-      <div><label class="f">Max candidates to grade per set</label><input type="number" id="topn" value="30"></div>
+      <div><label class="f">Spot crop size px (context shown around each spot)</label><input type="number" id="tile" value="280"></div>
+      <div style="display:none"><label class="f">unused</label><input type="number" id="ov" step="0.05" value="0.1"></div>
+      <div><label class="f">Min spot contrast (σ) — lower = more candidates</label><input type="number" id="thr" step="0.1" value="2.5"></div>
+      <div><label class="f">Max candidates per photo (Loveland ≈ 16/slope)</label><input type="number" id="topn" value="20"></div>
     </div>
-    <label style="font-size:12px;color:var(--dim);display:flex;gap:6px;margin-top:10px;align-items:center"><input type="checkbox" id="useneg" checked style="width:auto"> feed confirmed NON-hail look-alikes as counter-examples too (improves precision; uncheck if recall drops)</label>
+    <label style="font-size:12px;color:var(--dim);display:flex;gap:6px;margin-top:10px;align-items:center"><input type="checkbox" id="aiassist" style="width:auto"> <b>AI-classify surfaced spots</b> (uses API + your references; re-ranks by combined score and drops off-angle/wet)</label>
+    <label style="font-size:12px;color:var(--dim);display:flex;gap:6px;margin-top:6px;align-items:center"><input type="checkbox" id="useneg" checked style="width:auto"> when AI-classify is on, also show it your confirmed NON-hail look-alikes as counter-examples</label>
   </div>
   <div class="card">
     <h2>Project</h2>
@@ -127,7 +128,7 @@
   </div>
   <div class="card">
     <h2>3 · Surface candidates</h2>
-    <p class="h">Tiles each photo at native resolution and asks the model to <b>grade the granule-loss signature</b> per tile (0–1), using your current reference examples. Tiles above the threshold become candidates, ranked highest-first.</p>
+    <p class="h">Scans each photo's raw pixels for <b>hail-sized dark tonal spots</b> that stand out from the surrounding shingle field — shadow lines, streaks and big patches are filtered by shape. Free and instant. Candidates rank by contrast strength (σ); if AI-classify is on, Claude then grades each found spot and the rank blends both.</p>
     <div class="row" style="align-items:flex-end">
       <div style="max-width:240px"><label class="f">Surface which set</label><select id="surfSet"></select></div>
       <button class="btn" id="surfBtn">▶ Surface set</button>
@@ -214,7 +215,8 @@ const PRICE={"claude-sonnet-4-6":[3,15],"claude-opus-4-8":[5,25]};
 let DB=blankDB();
 function blankDB(){return{sets:{},labels:{},refs:{pos:[],neg:[]},cost:{i:0,o:0}};}
 function cfg(){return{key:$("#key").value.trim(),model:$("#model").value,grader:$("#grader").value,
-  tile:+$("#tile").value||440,ov:+$("#ov").value||0.1,thr:+$("#thr").value||0.12,topn:+$("#topn").value||30,useneg:$("#useneg").checked};}
+  tile:+$("#tile").value||280,ov:+$("#ov").value||0.1,thr:+$("#thr").value||2.5,topn:+$("#topn").value||20,
+  useneg:$("#useneg").checked,ai:$("#aiassist").checked};}
 const uid=()=>Math.random().toString(36).slice(2,10);
 /* ---- auto-save (IndexedDB; survives refresh) ---- */
 function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("rwtrainer",1);r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains("kv"))db.createObjectStore("kv");};r.onsuccess=e=>res(e.target.result);r.onerror=e=>rej(e);});}
@@ -230,6 +232,9 @@ async function doSave(){await idbPut("db",JSON.stringify(leanDB()));const b=$("#
   try{const s=JSON.parse(localStorage.getItem("rwtrainer_set")||"{}");
     if(s.model)$("#model").value=s.model; if(s.tile)$("#tile").value=s.tile; if(s.ov!=null)$("#ov").value=s.ov;
     if(s.thr!=null)$("#thr").value=s.thr; if(s.topn)$("#topn").value=s.topn;
+    // migrate settings from the old LLM-tile engine: threshold was 0-1, tile was 440
+    if(+$("#thr").value<1)$("#thr").value=2.5;
+    if(+$("#tile").value>=400)$("#tile").value=280;
     if(localStorage.getItem("rwtrainer_key")){$("#key").value=localStorage.getItem("rwtrainer_key");$("#remember").checked=true;}
   }catch(e){}
 })();
@@ -277,18 +282,86 @@ function refreshSets(){
 window.delSet=n=>{if(confirm("Delete set "+n+"? (labels for it are kept unless you clear)")){delete DB.sets[n];refreshSets();}};
 const totalCand=()=>Object.values(DB.sets).reduce((a,s)=>a+s.candidates.length,0);
 
-/* ---------- tiling ---------- */
-async function tilePhoto(photo,size,overlap){
-  const img=await loadImg(photo.dataUrl); const step=Math.max(40,Math.round(size*(1-overlap)));
-  const cv=document.createElement("canvas");cv.width=size;cv.height=size;const ctx=cv.getContext("2d");
-  const tiles=[];
-  for(let y=0;y<img.naturalHeight;y+=step){ for(let x=0;x<img.naturalWidth;x+=step){
-    const sx=Math.min(x,Math.max(0,img.naturalWidth-size)), sy=Math.min(y,Math.max(0,img.naturalHeight-size));
-    ctx.clearRect(0,0,size,size); ctx.drawImage(img,sx,sy,size,size,0,0,size,size);
-    tiles.push({x:sx,y:sy,dataUrl:cv.toDataURL("image/jpeg",0.9)});
-    if(x+size>=img.naturalWidth)break;
-  } if(y+size>=img.naturalHeight)break; }
-  return tiles;
+/* ---------- pixel-contrast spot finder (classical CV, no API) ----------
+   Finds hail-sized DARK tonal anomalies against the local shingle field —
+   the "slight discoloration" spots a human sees at slope scale. Linear
+   features (butt-edge shadows, tab slots, ridge lines) are rejected by
+   aspect ratio; big patches (cast shadow, stains) by size. */
+function boxBlur(src,W,H,r){
+  const tmp=new Float32Array(src.length), dst=new Float32Array(src.length), w1=2*r+1;
+  for(let y=0;y<H;y++){ const off=y*W; let acc=0;
+    for(let x=-r;x<=r;x++) acc+=src[off+Math.min(W-1,Math.max(0,x))];
+    for(let x=0;x<W;x++){ tmp[off+x]=acc/w1;
+      acc+=src[off+Math.min(W-1,x+r+1)]-src[off+Math.max(0,x-r)]; } }
+  for(let x=0;x<W;x++){ let acc=0;
+    for(let y=-r;y<=r;y++) acc+=tmp[Math.min(H-1,Math.max(0,y))*W+x];
+    for(let y=0;y<H;y++){ dst[y*W+x]=acc/w1;
+      acc+=tmp[Math.min(H-1,y+r+1)*W+x]-tmp[Math.max(0,y-r)*W+x]; } }
+  return dst;
+}
+function blobShape(d,W,H,p,level){
+  // flood-fill extent of the region above `level` connected to the peak
+  const R=44, seen=new Set([p.y*W+p.x]), qx=[p.x], qy=[p.y];
+  let minx=p.x,maxx=p.x,miny=p.y,maxy=p.y,count=0;
+  while(qx.length){
+    const x=qx.pop(), y=qy.pop(); count++;
+    if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y;
+    if(count>4000) break;
+    if(x+1<W) tryPush(x+1,y); if(x>0) tryPush(x-1,y);
+    if(y+1<H) tryPush(x,y+1); if(y>0) tryPush(x,y-1);
+  }
+  function tryPush(nx,ny){
+    if(Math.abs(nx-p.x)>R||Math.abs(ny-p.y)>R) return;
+    const k=ny*W+nx;
+    if(!seen.has(k)&&d[k]>=level){ seen.add(k); qx.push(nx); qy.push(ny); }
+  }
+  return {w:maxx-minx+1,h:maxy-miny+1,count};
+}
+async function detectSpots(photo,opt){
+  const img=await loadImg(photo.dataUrl);
+  const W=img.naturalWidth,H=img.naturalHeight,N=W*H;
+  const cv=document.createElement("canvas");cv.width=W;cv.height=H;
+  const ctx=cv.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(img,0,0);
+  const px=ctx.getImageData(0,0,W,H).data;
+  const g=new Float32Array(N);
+  for(let i=0,j=0;i<N;i++,j+=4) g[i]=0.299*px[j]+0.587*px[j+1]+0.114*px[j+2];
+  const small=boxBlur(g,W,H,2), big=boxBlur(g,W,H,30);
+  const d=new Float32Array(N);
+  for(let i=0;i<N;i++) d[i]=big[i]-small[i]; // positive = darker than local field
+  let sum=0,sum2=0,n=0;
+  for(let i=0;i<N;i+=7){const v=d[i];sum+=v;sum2+=v*v;n++;}
+  const mean=sum/n, sd=Math.sqrt(Math.max(1e-6,sum2/n-mean*mean));
+  const thr=mean+opt.minZ*sd;
+  const peaks=[];
+  for(let y=8;y<H-8;y+=2){ for(let x=8;x<W-8;x+=2){
+    const v=d[y*W+x]; if(v<=thr) continue;
+    let mx=true;
+    for(let dy=-2;dy<=2&&mx;dy++) for(let dx=-2;dx<=2;dx++) if(d[(y+dy)*W+x+dx]>v){mx=false;break;}
+    if(mx){ peaks.push({x,y,v}); if(peaks.length>50000) y=H; }
+  }}
+  peaks.sort((a,b)=>b.v-a.v);
+  const kept=[], MIND=34;
+  for(const p of peaks){
+    if(kept.length>=opt.maxSpots) break;
+    if(kept.some(k=>Math.abs(k.x-p.x)<MIND&&Math.abs(k.y-p.y)<MIND)) continue;
+    const bg=big[p.y*W+p.x];
+    if(bg>242||bg<22) continue; // sky/glare or deep shadow — unjudgeable
+    const sh=blobShape(d,W,H,p,mean+(p.v-mean)*0.5);
+    const bigE=Math.max(sh.w,sh.h), smallE=Math.max(1,Math.min(sh.w,sh.h));
+    if(bigE>60) continue;            // big patch = shadow/stain
+    if(bigE<3) continue;             // speck/noise
+    if(bigE/smallE>2.7) continue;    // linear = edge/shadow line
+    kept.push({x:p.x,y:p.y,z:(p.v-mean)/sd,size:bigE});
+  }
+  const C=opt.crop, half=C>>1, oc=document.createElement("canvas");
+  oc.width=C; oc.height=C; const octx=oc.getContext("2d");
+  return kept.map(p=>{
+    const sx=Math.max(0,Math.min(W-C,p.x-half)), sy=Math.max(0,Math.min(H-C,p.y-half));
+    octx.drawImage(cv,sx,sy,C,C,0,0,C,C);
+    return {photoId:photo.id,x:p.x,y:p.y,z:p.z,size:p.size,
+      point:{x:(p.x-sx)/C,y:(p.y-sy)/C},dataUrl:oc.toDataURL("image/jpeg",0.92)};
+  });
 }
 
 /* ---------- Claude call ---------- */
@@ -319,21 +392,40 @@ async function pool(items,fn,n){const out=[];let i=0;const run=async()=>{while(i
 
 /* ---------- surface ---------- */
 $("#surfBtn").onclick=async()=>{
-  const c=cfg(); if(!c.key){alert("Paste your API key in Setup first.");return;}
-  const name=$("#surfSet").value; const set=DB.sets[name]; if(!set||!set.photos.length){alert("No photos in that set.");return;}
-  $("#surfBtn").disabled=true; const bar=$("#surfBar");bar.style.display="block";const fill=bar.querySelector("i");
-  $("#surfNote").textContent="Tiling…";
-  let allTiles=[];
-  for(const ph of set.photos){const ts=await tilePhoto(ph,c.tile,c.ov);ts.forEach(t=>allTiles.push({photoId:ph.id,...t}));}
-  $("#surfNote").textContent=`Grading ${allTiles.length} tiles…`;
-  let done=0;
-  const res=await pool(allTiles,async t=>{const r=await grade(t.dataUrl,c);done++;fill.style.width=(done/allTiles.length*100)+"%";
-    if(done%5===0)$("#surfNote").textContent=`Grading ${done}/${allTiles.length} tiles…`;return{...t,...r};},4);
-  const cands=res.filter(r=>Number(r.granule_loss_score)>=c.thr&&!r.wet&&r.usable!==false)
-    .map(r=>({id:uid(),photoId:r.photoId,dataUrl:r.dataUrl,score:+r.granule_loss_score||0,spots:r.candidate_spots||0,tells:r.tells||0,point:(r.point&&Number.isFinite(+r.point.x)&&Number.isFinite(+r.point.y))?{x:clamp01(+r.point.x),y:clamp01(+r.point.y)}:null,note:r.note||""}))
-    .sort((a,b)=>b.score-a.score).slice(0,c.topn);
+  const c=cfg();
+  if(c.ai&&!c.key){alert("AI-classify is ON but no API key is set — paste one in Setup or untick AI-classify.");return;}
+  const name=$("#surfSet").value; const set=DB.sets[name];
+  if(!set||!set.photos.length){alert("No photos in that set.");return;}
+  if(set.photos.some(p=>!p.dataUrl)){alert("This set was restored from auto-save without image data — drag the photo files in again, then Surface.");return;}
+  $("#surfBtn").disabled=true; const bar=$("#surfBar");bar.style.display="block";const fill=bar.querySelector("i");fill.style.width="0";
+  let cands=[];
+  try{
+    for(let i=0;i<set.photos.length;i++){
+      $("#surfNote").textContent=`Scanning photo ${i+1}/${set.photos.length} for hail-sized tonal spots…`;
+      await new Promise(r=>setTimeout(r,30)); // let the UI paint
+      const found=await detectSpots(set.photos[i],{minZ:c.thr,maxSpots:c.topn,crop:c.tile});
+      cands.push(...found.map(s=>({id:uid(),photoId:s.photoId,dataUrl:s.dataUrl,
+        score:Math.min(1,s.z/8),z:s.z,size:s.size,point:s.point,
+        note:`contrast ${s.z.toFixed(1)}σ · ~${s.size}px`})));
+      fill.style.width=((i+1)/set.photos.length*(c.ai?50:100))+"%";
+    }
+    if(c.ai&&cands.length){
+      $("#surfNote").textContent=`AI-classifying ${cands.length} spots…`;
+      let done=0;
+      const res=await pool(cands,async cd=>{const r=await grade(cd.dataUrl,c);done++;
+        fill.style.width=(50+done/cands.length*50)+"%";
+        return {id:cd.id,ai:clamp01(Number(r.granule_loss_score)||0),note:String(r.note||""),bad:r.usable===false||r.wet===true};},4);
+      const byId={}; res.forEach(r=>{if(r&&r.id)byId[r.id]=r;});
+      cands.forEach(cd=>{const r=byId[cd.id]; if(!r)return;
+        cd.ai=r.ai; cd.score=Math.min(1,cd.score*0.5+r.ai*0.5);
+        if(r.note)cd.note+=` · AI ${r.ai.toFixed(2)}: ${r.note}`;
+        if(r.bad)cd._drop=true;});
+      cands=cands.filter(cd=>!cd._drop);
+    }
+  }catch(e){ $("#surfNote").innerHTML=`<span class="warn">Error: ${e.message}</span>`; $("#surfBtn").disabled=false; return; }
+  cands.sort((a,b)=>b.score-a.score);
   set.candidates=cands; set.surfacedAt=Date.now();
-  $("#surfNote").innerHTML=`<span class="ok">✓ ${cands.length} candidates</span> from ${allTiles.length} tiles (${res.filter(r=>r.wet).length} wet, ${res.filter(r=>r.usable===false).length} off-angle skipped). Go to <b>Grade</b>.`;
+  $("#surfNote").innerHTML=`<span class="ok">✓ ${cands.length} candidates</span> across ${set.photos.length} photo(s) — pixel-contrast scan${c.ai?" + AI classify":""}, up to ${c.topn}/photo. Go to <b>Grade</b>.`;
   $("#surfBtn").disabled=false; refreshSets();
 };
 
@@ -348,7 +440,7 @@ function showCand(){
   const set=DB.sets[gSetName]; if(!set||!gQueue.length){$("#gImg").src="";$("#gScore").textContent="–";$("#gInfo").textContent="No candidates — surface a set first.";$("#gProg").textContent="";$("#gBar").style.width="0";return;}
   gIdx=Math.max(0,Math.min(gIdx,gQueue.length-1)); const c=gQueue[gIdx]; const lab=DB.labels[c.id];
   $("#gImg").src=c.dataUrl; $("#gScore").textContent=c.score.toFixed(2);
-  $("#gInfo").innerHTML=`spots ${c.spots} · tells ${c.tells}/3 · <i>${c.note||""}</i>` + (lab?` — <span class="pill" style="background:var(--${lab.verdict==='hail'?'hail':lab.verdict==='not'?'not':'unsure'});color:#1b1b1b">${lab.verdict}${lab.gold?" ★":""}</span>`:"");
+  $("#gInfo").innerHTML=`<i>${c.note||""}</i>` + (lab?` — <span class="pill" style="background:var(--${lab.verdict==='hail'?'hail':lab.verdict==='not'?'not':'unsure'});color:#1b1b1b">${lab.verdict}${lab.gold?" ★":""}</span>`:"");
   $("#gtChk").checked=lab?!!lab.groundTruth:false;
   const graded=gQueue.filter(x=>DB.labels[x.id]).length; const togo=gQueue.length-graded;
   $("#gProg").innerHTML=`<b>${gSetName}</b> · on ${gIdx+1}/${gQueue.length} · <b>${graded} graded, ${togo} to go</b>` + (togo===0?' <span style="color:var(--acc2)">✓ set complete — Rebuild in Learn</span>':'');
@@ -358,7 +450,7 @@ function showCand(){
   img.onload=drawSpot; drawSpot();
 }
 function setVerdict(v){const c=gQueue[gIdx];if(!c)return;const cur=DB.labels[c.id]||{};
-  DB.labels[c.id]={verdict:v,gold:cur.gold||false,grader:$("#grader").value,groundTruth:$("#gtChk").checked,score:c.score,dataUrl:c.dataUrl,setName:gSetName,at:Date.now()};
+  DB.labels[c.id]={verdict:v,gold:cur.gold||false,grader:$("#grader").value,groundTruth:$("#gtChk").checked,score:c.score,eng:(c.z!=null?"cv":"llm"),dataUrl:c.dataUrl,setName:gSetName,at:Date.now()};
   refreshSets(); if(gIdx<gQueue.length-1){gIdx++;showCand();}else showCand();}
 $$(".gbtns button[data-v]").forEach(b=>b.onclick=()=>setVerdict(b.dataset.v));
 $("#goldBtn").onclick=()=>{const c=gQueue[gIdx];if(!c)return;const l=DB.labels[c.id]||{verdict:"hail",grader:$("#grader").value,score:c.score,dataUrl:c.dataUrl,setName:gSetName,at:Date.now()};l.gold=!l.gold;if(l.gold&&!l.verdict)l.verdict="hail";DB.labels[c.id]=l;showCand();};
@@ -387,7 +479,7 @@ function renderLearn(){
   DB.refs.neg.forEach(r=>nt.insertAdjacentHTML("beforeend",`<figure><img src="data:${r.media};base64,${r.data}"><figcaption>not</figcaption></figure>`));
   if(!DB.refs.pos.length)pt.innerHTML='<span class="note">Grade some Hail (star the clearest as Gold), then Rebuild.</span>';
   // calibration
-  const labs=Object.values(DB.labels).filter(l=>l.verdict==="hail"||l.verdict==="not");
+  const labs=activeLabels();
   const bins=[0,.2,.4,.6,.8,1];const cal=$("#calib");cal.innerHTML="";let txt=[];
   for(let i=0;i<bins.length-1;i++){const lo=bins[i],hi=bins[i+1];const inb=labs.filter(l=>l.score>=lo&&l.score<(hi===1?1.01:hi));
     const rate=inb.length?inb.filter(l=>l.verdict==="hail").length/inb.length:0;
@@ -395,7 +487,7 @@ function renderLearn(){
     if(inb.length)txt.push([lo,rate,inb.length]);}
   // suggested threshold: lowest bin where hit-rate >=0.5
   const good=txt.find(t=>t[1]>=0.5);
-  $("#calibNote").innerHTML=good?`Suggested surface/keep threshold ≈ <b>${good[0].toFixed(2)}</b> (where confirmed-hail rate crosses 50%). Set it in Setup.`:(labs.length?`Not enough separation yet — grade more, or the signal may be capture-limited at 12MP.`:`Grade Hail/Not candidates to build the calibration curve.`);
+  $("#calibNote").innerHTML=good?`Suggested cutoff ≈ score <b>${good[0].toFixed(2)}</b> (≈ ${(good[0]*8).toFixed(1)}σ contrast) — where your confirmed-hail rate crosses 50%. Set "Min spot contrast" near that in Setup.`:(labs.length?`Not enough separation yet — grade more candidates.`:`Grade Hail/Not candidates to build the calibration curve.`);
 }
 
 /* ---------- stats ---------- */
@@ -413,9 +505,16 @@ function renderStats(){
   }
   updateCost();
 }
+function activeLabels(){
+  // prefer labels graded under the current (pixel-contrast) engine — old LLM-era
+  // scores are on a different scale and would muddy the stats
+  const all=Object.values(DB.labels).filter(l=>l.verdict==="hail"||l.verdict==="not");
+  const cv=all.filter(l=>l.eng==="cv");
+  return (cv.filter(l=>l.verdict==="hail").length>=3&&cv.filter(l=>l.verdict==="not").length>=3)?cv:all;
+}
 function updateMeter(){
   const el=$("#meter"); if(!el)return;
-  const labs=Object.values(DB.labels).filter(l=>l.verdict==="hail"||l.verdict==="not");
+  const labs=activeLabels();
   const hail=labs.filter(l=>l.verdict==="hail").map(l=>+l.score), not=labs.filter(l=>l.verdict==="not").map(l=>+l.score);
   const mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:NaN;
   const mh=mean(hail),mn=mean(not),sep=mh-mn;
